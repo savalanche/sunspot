@@ -1,12 +1,12 @@
 namespace :sunspot do
 
-  desc "Drop and then reindex all solr models that are located in your application's models directory."
+  desc "Reindex all solr models that are located in your application's models directory."
   # This task depends on the standard Rails file naming \
   # conventions, in that the file name matches the defined class name. \
   # By default the indexing system works in batches of 50 records, you can \
   # set your own value for this by using the batch_size argument. You can \
   # also optionally define a list of models to separated by a forward slash '/'
-  #
+  # 
   # $ rake sunspot:reindex                # reindex all models
   # $ rake sunspot:reindex[1000]          # reindex in batches of 1000
   # $ rake sunspot:reindex[false]         # reindex without batching
@@ -14,24 +14,20 @@ namespace :sunspot do
   # $ rake sunspot:reindex[1000,Post]     # reindex only the Post model in
   #                                       # batchs of 1000
   # $ rake sunspot:reindex[,Post+Author]  # reindex Post and Author model
-  task :reindex, [:batch_size, :models] => [:environment] do |t, args|
-    puts "*Note: the reindex task will remove your current indexes and start from scratch."
-    puts "If you have a large dataset, reindexing can take a very long time, possibly weeks."
-    puts "This is not encouraged if you have anywhere near or over 1 million rows."
-    puts "Are you sure you want to drop your indexes and completely reindex? (y/n)"
-    answer = STDIN.gets.chomp
-    return false if answer == "n"
+  # $ rake sunspot:reindex[,Post,company_id=3+filter_id=5]  # reindexes Post model where company_id = 3 and filter_id = 5
+  # $ rake sunspot:reindex[,,company_id=3+filter_id=5]      # reindexes all models where company_id = 3 and filter_id = 5
+  task :reindex, [:batch_size, :models, :scoping_methods] => [:environment] do |t, args|
 
     # Retry once or gracefully fail for a 5xx error so we don't break reindexing
     Sunspot.session = Sunspot::SessionProxy::Retry5xxSessionProxy.new(Sunspot.session)
 
     # Set up general options for reindexing
     reindex_options = { :batch_commit => false }
-
+    
     case args[:batch_size]
     when 'false'
       reindex_options[:batch_size] = nil
-    when /^\d+$/
+    when /^\d+$/ 
       reindex_options[:batch_size] = args[:batch_size].to_i if args[:batch_size].to_i > 0
     end
 
@@ -43,18 +39,28 @@ namespace :sunspot do
     sunspot_models = Sunspot.searchable
 
     # Choose a specific subset of models, if requested
-    if args[:models]
+    if args[:models] && args[:models].length > 0
       model_names = args[:models].split('+')
       sunspot_models = model_names.map{ |m| m.constantize }
     end
-
+    
+    if args[:scoping_methods] && args[:scoping_methods].length > 0
+      reindex_options[:scoping_methods] = {}
+      tuplets = args[:scoping_methods].split('+')
+      tuplets.each do |t| 
+        tuplet = t.split('=')
+        raise ArgumentError, 'Value missing for scoping field. Correct form: field1=val1+field2=val2...' if tuplet.count != 2
+        reindex_options[:scoping_methods][tuplet.first.to_sym] = tuplet.last
+      end
+    end
+    
     # Set up progress_bar to, ah, report progress
     begin
       require 'progress_bar'
       total_documents = sunspot_models.map { | m | m.count }.sum
       reindex_options[:progress_bar] = ProgressBar.new(total_documents)
     rescue LoadError => e
-      $stdout.puts "Skipping progress bar: for progress reporting, add gem 'progress_bar' to your Gemfile"
+      $stderr.puts "Skipping progress bar: for progress reporting, add gem 'progress_bar' to your Gemfile"
     rescue Exception => e
       $stderr.puts "Error using progress bar: #{e.message}"
     end
