@@ -1,5 +1,3 @@
-require 'sunspot/batcher'
-
 module Sunspot
   # 
   # This class presents a service for adding, updating, and removing data
@@ -24,10 +22,10 @@ module Sunspot
     #
     def add(model)
       documents = Util.Array(model).map { |m| prepare(m) }
-      if batcher.batching?
-        batcher.concat(documents)
-      else
+      if @batch.nil?
         add_documents(documents)
+      else
+        @batch.concat(documents)
       end
     end
 
@@ -71,21 +69,18 @@ module Sunspot
     # Start batch processing
     #
     def start_batch
-      batcher.start_new
+      @batch = []
     end
 
     #
     # Write batch out to Solr and clear it
     #
     def flush_batch
-      add_documents(batcher.end_current)
+      add_documents(@batch)
+      @batch = nil
     end
 
     private
-
-    def batcher
-      @batcher ||= Batcher.new
-    end
 
     # 
     # Convert documents into hash of indexed properties

@@ -168,6 +168,10 @@ module Sunspot
       commit
     end
 
+    def remove_by_scope(scope)
+      indexer.remove_by_scope(scope)
+    end
+
     #
     # See Sunspot.remove_all
     #
@@ -239,9 +243,7 @@ module Sunspot
     #
     def connection
       @connection ||=
-        self.class.connection_class.connect(:url          => config.solr.url,
-                                            :read_timeout => config.solr.read_timeout,
-                                            :open_timeout => config.solr.open_timeout)
+        self.class.connection_class.connect(:url => config.solr.url)
     end
 
     def indexer
